@@ -12,18 +12,16 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 import asyncio
 import tempfile
 from dotenv import load_dotenv
+import time
 
 # 載入 .env 檔案
 load_dotenv()
 
 # 設置日誌
 logging.basicConfig(
+    filename='ehentai_download.log',
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('ehentai_download.log', encoding='utf-8'),
-        logging.StreamHandler()
-    ]
+    format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
 # 從環境變數讀取 Telegram Bot Token
@@ -197,23 +195,16 @@ async def download_cover(gallery_url, update: Update, context: ContextTypes.DEFA
         filename = f'cover_{timestamp}.jpg'
         
         # 使用臨時檔案保存圖片
-        with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_file:
-            temp_file.write(img_response.content)
-            temp_file_path = temp_file.name
+        with open(filename, 'wb') as f:
+            f.write(img_response.content)
         
         # 發送圖片到 Telegram
         logging.info("準備發送圖片到 Telegram")
         await update.message.reply_photo(
-            photo=open(temp_file_path, 'rb'),
+            photo=open(filename, 'rb'),
             caption=f"封面圖片已成功下載\n原始 URL: {gallery_url}"
         )
         logging.info("圖片已成功發送到 Telegram")
-        
-        # 刪除臨時檔案
-        os.unlink(temp_file_path)
-        
-        logging.info("下載完成")
-        await update.message.reply_text("下載完成！")
         
     except requests.exceptions.RequestException as e:
         error_msg = f"請求發生錯誤: {str(e)}"
@@ -228,10 +219,7 @@ async def download_cover(gallery_url, update: Update, context: ContextTypes.DEFA
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """處理 /start 命令"""
     logging.info(f"收到 /start 命令，用戶 ID: {update.effective_user.id}")
-    await update.message.reply_text(
-        "歡迎使用 E-Hentai 封面下載機器人！\n"
-        "請直接發送 E-Hentai 或 ExHentai 的漫畫頁面 URL，我會幫你下載封面圖片。"
-    )
+    await update.message.reply_text('歡迎使用 E-Hentai 封面下載機器人！\n請發送 E-Hentai 畫廊的 URL 給我。')
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """處理 /help 命令"""
@@ -246,24 +234,97 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """處理用戶發送的訊息"""
-    logging.info(f"收到訊息，用戶 ID: {update.effective_user.id}")
-    message_text = update.message.text
-    logging.info(f"訊息內容: {message_text}")
-    
-    # 檢查是否為有效的 URL
-    if not message_text.startswith(('http://', 'https://')):
-        logging.warning(f"無效的 URL 格式: {message_text}")
-        await update.message.reply_text("請發送有效的 URL！")
-        return
+    """處理用戶發送的消息"""
+    try:
+        message = update.message
+        text = message.text.strip()
         
-    # 檢查是否為 e-hentai 或 exhentai 的 URL
-    if 'e-hentai.org' not in message_text and 'exhentai.org' not in message_text:
-        logging.warning(f"不支援的網域: {message_text}")
-        await update.message.reply_text("請發送 E-Hentai 或 ExHentai 的 URL！")
-        return
+        # 檢查是否為有效的 URL
+        if not text.startswith(('http://', 'https://')):
+            logging.warning(f"無效的 URL 格式: {text}")
+            return
+            
+        # 檢查是否為 E-Hentai 的 URL
+        if 'e-hentai.org' not in text:
+            logging.warning(f"不支援的域名: {text}")
+            return
+            
+        # 獲取封面 URL
+        cover_url = get_cover_url(text)
+        if not cover_url:
+            logging.error("無法獲取封面 URL")
+            return
+            
+        # 下載圖片
+        filename = download_image(cover_url)
+        if not filename:
+            logging.error("無法下載圖片")
+            return
+            
+        # 發送圖片
+        try:
+            logging.info("準備發送圖片到 Telegram")
+            with open(filename, 'rb') as photo:
+                await message.reply_photo(photo=photo, reply_to_message_id=message.message_id)
+            logging.info("圖片已成功發送到 Telegram")
+        finally:
+            # 清理臨時文件
+            if os.path.exists(filename):
+                os.remove(filename)
+                logging.info(f"已刪除臨時文件: {filename}")
+                
+    except Exception as e:
+        logging.error(f"處理消息時發生錯誤: {str(e)}", exc_info=True)
+
+def get_cover_url(gallery_url):
+    """從畫廊頁面獲取封面圖片URL"""
+    try:
+        logging.info(f"開始訪問頁面: {gallery_url}")
+        response = requests.get(gallery_url, headers=HEADERS, timeout=10)
+        response.raise_for_status()
         
-    await download_cover(message_text, update, context)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        cover_div = soup.find('div', id='gd1')
+        if not cover_div:
+            logging.error("找不到封面圖片元素")
+            return None
+            
+        img = cover_div.find('img')
+        if not img:
+            logging.error("找不到圖片元素")
+            return None
+            
+        cover_url = img.get('src')
+        if not cover_url:
+            logging.error("找不到圖片URL")
+            return None
+            
+        logging.info(f"成功獲取封面URL: {cover_url}")
+        return cover_url
+    except Exception as e:
+        logging.error(f"獲取封面URL時發生錯誤: {str(e)}")
+        return None
+
+def download_image(url):
+    """下載圖片並保存到本地"""
+    try:
+        logging.info("正在下載圖片...")
+        response = requests.get(url, headers=HEADERS, timeout=10)
+        response.raise_for_status()
+        
+        # 生成唯一的文件名
+        timestamp = int(time.time())
+        filename = f"cover_{timestamp}.jpg"
+        
+        # 保存圖片
+        with open(filename, 'wb') as f:
+            f.write(response.content)
+            
+        logging.info(f"圖片已保存為: {filename}")
+        return filename
+    except Exception as e:
+        logging.error(f"下載圖片時發生錯誤: {str(e)}")
+        return None
 
 def main():
     """啟動機器人"""
