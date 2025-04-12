@@ -1,0 +1,1 @@
+web: python ehentai_cover_downloader.py 
