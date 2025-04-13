@@ -142,19 +142,42 @@ async def download_cover(gallery_url, update: Update, context: ContextTypes.DEFA
         soup = BeautifulSoup(response.text, 'html.parser')
         logging.info("頁面解析成功")
         
-        # 找到包含封面圖片的 div 元素
-        cover_div = soup.find('div', style=lambda s: s and 'background:' in s and 'url(' in s)
-        if not cover_div:
-            error_msg = "找不到封面圖片元素"
+        # 找到第一頁的連結
+        first_page_link = soup.find('a', href=lambda x: x and '/s/' in x and '-1' in x)
+        if not first_page_link:
+            error_msg = "找不到第一頁連結"
             logging.error(error_msg)
             return None
             
-        # 從 style 屬性中提取圖片 URL
-        style = cover_div.get('style')
-        img_url = extract_image_url(style)
+        # 修正 URL 拼接
+        first_page_href = first_page_link['href']
+        if first_page_href.startswith('http'):
+            first_page_url = first_page_href
+        else:
+            first_page_url = 'https://e-hentai.org' + first_page_href
+            
+        logging.info(f"找到第一頁 URL: {first_page_url}")
         
+        # 訪問第一頁
+        first_page_response = requests.get(first_page_url, headers=headers)
+        if first_page_response.status_code != 200:
+            error_msg = f"第一頁訪問失敗，狀態碼: {first_page_response.status_code}"
+            logging.error(error_msg)
+            return None
+            
+        # 解析第一頁
+        first_page_soup = BeautifulSoup(first_page_response.text, 'html.parser')
+        
+        # 找到圖片元素
+        img_element = first_page_soup.find('img', id='img')
+        if not img_element:
+            error_msg = "找不到圖片元素"
+            logging.error(error_msg)
+            return None
+            
+        img_url = img_element.get('src')
         if not img_url:
-            error_msg = "無法從 style 屬性中提取圖片 URL"
+            error_msg = "找不到圖片 URL"
             logging.error(error_msg)
             return None
             
@@ -184,7 +207,7 @@ async def download_cover(gallery_url, update: Update, context: ContextTypes.DEFA
             
         # 生成唯一的檔案名稱
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f'cover_{timestamp}.jpg'
+        filename = f'first_page_{timestamp}.jpg'
         
         # 使用臨時檔案保存圖片
         with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_file:
