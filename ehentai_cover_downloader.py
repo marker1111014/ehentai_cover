@@ -29,14 +29,14 @@ logging.basicConfig(
 # 從環境變數讀取 Telegram Bot Token
 TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 if not TOKEN:
-    logging.error("無法讀取 Telegram Bot Token，請檢查 .env 檔案")
+    logging.error("無法讀取 Telegram Bot Token,請檢查 .env 檔案")
     raise ValueError("請在 .env 檔案中設置 TELEGRAM_BOT_TOKEN")
 
 def convert_to_ehentai(url):
     """將 exhentai.org 的 URL 轉換為 e-hentai.org"""
     parsed_url = urlparse(url)
     if parsed_url.netloc == 'exhentai.org':
-        logging.info(f"檢測到 exhentai.org 網域，自動轉換為 e-hentai.org")
+        logging.info(f"檢測到 exhentai.org 網域,自動轉換為 e-hentai.org")
         # 替換網域
         new_netloc = 'e-hentai.org'
         # 重新組裝 URL
@@ -111,7 +111,7 @@ def extract_image_url(style_string):
 
 async def download_cover(gallery_url, update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        logging.info(f"收到下載請求，URL: {gallery_url}")
+        logging.info(f"收到下載請求,URL: {gallery_url}")
         # 檢查並轉換 URL
         gallery_url = convert_to_ehentai(gallery_url)
         
@@ -125,7 +125,7 @@ async def download_cover(gallery_url, update: Update, context: ContextTypes.DEFA
         
         # 檢查狀態碼
         if response.status_code != 200:
-            error_msg = f"頁面訪問失敗，狀態碼: {response.status_code}"
+            error_msg = f"頁面訪問失敗,狀態碼: {response.status_code}"
             logging.error(error_msg)
             return None
             
@@ -161,7 +161,7 @@ async def download_cover(gallery_url, update: Update, context: ContextTypes.DEFA
         # 訪問第一頁
         first_page_response = requests.get(first_page_url, headers=headers)
         if first_page_response.status_code != 200:
-            error_msg = f"第一頁訪問失敗，狀態碼: {first_page_response.status_code}"
+            error_msg = f"第一頁訪問失敗,狀態碼: {first_page_response.status_code}"
             logging.error(error_msg)
             return None
             
@@ -192,7 +192,7 @@ async def download_cover(gallery_url, update: Update, context: ContextTypes.DEFA
         logging.info(f"圖片下載狀態碼: {img_response.status_code}")
         
         if img_response.status_code != 200:
-            error_msg = f"圖片下載失敗，狀態碼: {img_response.status_code}"
+            error_msg = f"圖片下載失敗,狀態碼: {img_response.status_code}"
             logging.error(error_msg)
             return None
             
@@ -219,55 +219,62 @@ async def download_cover(gallery_url, update: Update, context: ContextTypes.DEFA
     except requests.exceptions.RequestException as e:
         error_msg = f"請求發生錯誤: {str(e)}"
         logging.error(error_msg)
-        logging.exception("詳細錯誤信息：")
+        logging.exception("詳細錯誤信息:")
         return None
     except Exception as e:
         error_msg = f"發生未知錯誤: {str(e)}"
         logging.error(error_msg)
-        logging.exception("詳細錯誤信息：")
+        logging.exception("詳細錯誤信息:")
         return None
+
+def extract_urls(text):
+    """用正則表達式從文字中提取所有 URL"""
+    pattern = r'https?://[^\s]+'
+    return re.findall(pattern, text)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """處理 /start 命令"""
-    logging.info(f"收到 /start 命令，用戶 ID: {update.effective_user.id}")
+    logging.info(f"收到 /start 命令,用戶 ID: {update.effective_user.id}")
     await update.message.reply_text(
-        "歡迎使用 E-Hentai 封面下載機器人！\n"
-        "請直接發送 E-Hentai 或 ExHentai 的漫畫頁面 URL，我會幫你下載封面圖片。"
+        "歡迎使用 E-Hentai 封面下載機器人!\n"
+        "請直接發送 E-Hentai 或 ExHentai 的漫畫頁面 URL,我會幫你下載封面圖片。"
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """處理 /help 命令"""
-    logging.info(f"收到 /help 命令，用戶 ID: {update.effective_user.id}")
+    logging.info(f"收到 /help 命令,用戶 ID: {update.effective_user.id}")
     await update.message.reply_text(
-        "使用說明：\n"
+        "使用說明:\n"
         "1. 直接發送 E-Hentai 或 ExHentai 的漫畫頁面 URL\n"
         "2. 我會自動下載並發送封面圖片給你\n"
-        "3. 支援的網域：\n"
+        "3. 支援的網域:\n"
         "   - e-hentai.org\n"
-        "   - exhentai.org（會自動轉換為 e-hentai.org）"
+        "   - exhentai.org(會自動轉換為 e-hentai.org)"
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """處理用戶發送的訊息"""
     try:
-        logging.info(f"收到訊息，用戶 ID: {update.effective_user.id}")
+        logging.info(f"收到訊息,用戶 ID: {update.effective_user.id}")
         logging.info(f"訊息內容: {update.message.text}")
-        
-        # 檢查訊息是否為 URL
-        if not update.message.text.startswith(('http://', 'https://')):
-            logging.warning("無效的 URL 格式")
+
+        # 從訊息中提取所有 URL
+        urls = extract_urls(update.message.text)
+        if not urls:
+            logging.warning("訊息中未找到有效 URL")
             return
         
-        # 檢查是否為支援的網域
-        if 'e-hentai.org' not in update.message.text and 'exhentai.org' not in update.message.text:
-            logging.warning(f"不支援的網域: {update.message.text}")
+        # 取第一個 URL 並驗證網域
+        gallery_url = urls[0]
+        if 'e-hentai.org' not in gallery_url and 'exhentai.org' not in gallery_url:
+            logging.warning(f"不支援的網域: {gallery_url}")
             return
         
         # 下載圖片
-        image_path = await download_cover(update.message.text, update, context)
+        image_path = await download_cover(gallery_url, update, context)
         
         if image_path:
-            # 只發送圖片，不發送任何文字訊息
+            # 只發送圖片,不發送任何文字訊息
             await update.message.reply_photo(
                 photo=open(image_path, 'rb'),
                 reply_to_message_id=update.message.message_id
@@ -297,4 +304,4 @@ def main():
 
 if __name__ == "__main__":
     logging.info("程式開始執行")
-    main() 
+    main()
